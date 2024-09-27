@@ -38,6 +38,5 @@ else
     destination 172.30.250.144 --jump DNAT --to-destination "$contIP"
     sudo iptables --table nat --insert POSTROUTING --source "$contIP" --
     destination 0.0.0.0/0 --jump SNAT --to-source 172.30.250.144
-    exit 0
 fi
 exit 0
