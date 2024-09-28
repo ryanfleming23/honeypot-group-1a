@@ -1,0 +1,47 @@
+(node:113967) Warning: Accessing non-existent property 'padLevels' of module exports inside circular dependency
+(Use `node --trace-warnings ...` to show where the warning was created)
+Started with the following options:
+{
+  debug: true,
+  mitmIp: '127.0.0.1',
+  autoAccess: false,
+  autoAccessCache: 5000,
+  maxAttemptsPerConnection: 6,
+  sshServerIdentifier: 'SSH-2.0-OpenSSH_6.6.1p1 Ubuntu-2ubuntu2',
+  containerMountPathPrefix: '/var/lib/lxc',
+  containerMountPathSuffix: 'rootfs/',
+  loggingAttackerStreams: '/home/student/MITM/logs/session_streams',
+  loggingAuthenticationAttempts: '/home/student/MITM/logs/authentication_attempts',
+  loggingLogins: '/home/student/MITM/logs/logins',
+  loggingLogouts: '/home/student/MITM/logs/logouts',
+  loggingKeystrokes: '/home/student/MITM/logs/keystrokes',
+  containerName: 'c3',
+  containerIp: '10.0.3.96',
+  mitmPort: NaN,
+  autoAccessFixed: 3
+}
+[WARNING] Your MITM server is listening on the localhost IP address, you will need to set the following sysctl option for iptables to port forward to a localhost IP:
+sysctl -w net.ipv4.conf.all.route_localnet=1
+2024-09-28 17:00:47.509 - [Info] MITM Version: 2
+2024-09-28 17:00:47.511 - [Info] Auto Access Enabled: false
+2024-09-28 17:00:47.511 - [Debug] [Init] Auto Access Theshold Achieved: false
+node:internal/validators:409
+    throw new ERR_SOCKET_BAD_PORT(name, port, allowZero);
+    ^
+
+RangeError [ERR_SOCKET_BAD_PORT]: options.port should be >= 0 and < 65536. Received type number (NaN).
+    at new NodeError (node:internal/errors:405:5)
+    at validatePort (node:internal/validators:409:11)
+    at Server.listen (node:net:1945:5)
+    at Server.listen (/home/student/MITM/node_modules/ssh2/lib/server.js:265:20)
+    at startServer (/home/student/MITM/server/index.js:202:10)
+    at Object.<anonymous> (/home/student/MITM/server/index.js:177:1)
+    at Module._compile (node:internal/modules/cjs/loader:1364:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1422:10)
+    at Module.load (node:internal/modules/cjs/loader:1203:32)
+    at Module._load (node:internal/modules/cjs/loader:1019:12) {
+  code: 'ERR_SOCKET_BAD_PORT'
+}
+
+Node.js v18.20.4
+{"level":"error","message":"Forever detected script exited with code: 1"}
