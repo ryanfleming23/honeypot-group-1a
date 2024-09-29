@@ -49,6 +49,8 @@ create_container () {
     sudo iptables --table nat --insert PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --jump DNAT --to-destination "$ip"
     sudo iptables --table nat --insert POSTROUTING --source "$ip" --destination 0.0.0.0/0 --jump SNAT --to-source "$public_ip"
 
+    sudo iptables --insert INPUT --protocol tcp --source 0.0.0.0/0 --destination "$public_ip" --dport 22 --match connlimit --connlimit-above 1 --jump REJECT
+
     sudo lxc-attach -n "$name" -e -- sudo apt-get --assume-yes install openssh-server
 
     # Has to work with three IPs
@@ -102,9 +104,13 @@ destroy_container () {
 
     sudo iptables -w --table nat --delete POSTROUTING --source "$ip" --destination 0.0.0.0/0 --jump SNAT --to-source "$public_ip"
     sudo iptables -w --table nat --delete PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --jump DNAT --to-destination "$ip" 
+
+    sudo iptables --delete INPUT --protocol tcp --source 0.0.0.0/0 --destination "$public_ip" --dport 22 --match connlimit --connlimit-above 1 --jump REJECT
+
     sudo ip addr delete "$public_ip"/16 brd + dev eth0 
 
     sudo iptables -w --table nat --delete PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --protocol tcp --dport 22 --jump DNAT --to-destination "127.0.0.1:$port"
+
     sudo forever stop "$name"
 
     sudo lxc-stop -n "$name"
