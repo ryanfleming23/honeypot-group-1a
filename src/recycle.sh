@@ -15,6 +15,7 @@ RESET="\033[0m"
 
 MAX_MIN=30
 IDLE_MIN=4
+DELAYS=(0 1 2 5 10 30)
 
 declare -A CONTAINERS;
 CONTAINERS["c1"]="172.30.250.112"; # Ryan Internal IP
@@ -66,7 +67,20 @@ create_container () {
     sudo forever --id "$name" -l "$LOG_PATH""$name".log start "$MITM_PATH" -n "$name" -i "$ip" -p "$port" --auto-access --auto-access-fixed 3 --debug
     sudo iptables --table nat --insert PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --protocol tcp --dport 22 --jump DNAT --to-destination "127.0.0.1:$port"
 
-    date +%s >> "$VAR_PATH""$name".txt
+    date +%s > "$VAR_PATH""$name".txt
+
+    # Prelimary Honey Copying (Not the Focus)
+    # sudo cp -r /home/student/honeypot-group-1a/honey.zip /var/lib/lxc/$name/rootfs/home/ubuntu/honey.zip
+    # sudo lxc-attach -n "$name" -- unzip /home/ubuntu/honey.zip
+    # sudo lxc-attach -n "$name" -- rm /home/ubuntu/honey.zip
+
+    delay=$(printf "%s\n" "${DELAYS[@]}" | shuf -n 1)
+    if [ $delay -ne 0 ]; then
+        echo "trap 'sleep "$delay"' DEBUG" | sudo tee -a /var/lib/lxc/$name/rootfs/home/ubuntu/.bashrc
+        sudo lxc-attach -n "$name" -- source /home/ubuntu/.bashrc
+    fi
+
+    echo $delay >> "$VAR_PATH""$name".txt
 
     echo -e "${GREEN}Created Container \"$name\".${RESET}"
 }
@@ -107,13 +121,38 @@ containers=$(sudo lxc-ls -f)
 
 pids=()
 count=0
-for container_name in "${!CONTAINERS[@]}"; do
-    if [[ "$containers" = *"$container_name"* ]]; then
-        ( destroy_container "$container_name" "${CONTAINERS[$container_name]}" $count) &
+for name in "${!CONTAINERS[@]}"; do
+    if [[ "$containers" = *"$name"* ]]; then
+        keep_running=true
+
+        log_file="$LOG_PATH$name.log"
+        var_file="$VAR_PATH$name.txt"
+
+        if grep -q "Attacker authenticated and is inside container" "$log_file"; then
+            if grep -q "Attacker closed connection" "$log_file"; then
+                echo -e "${RED}Attacker Closed Connection in \"$name\".${RESET}"
+                keep_running=false
+            elif (( $(date +%s) - $(stat -c %Y "$log_file") > IDLE_MIN * 60 )); then
+                echo -e "${RED}Attacker Went Idle in \"$name\".${RESET}"
+                keep_running=false
+            fi
+        fi
+        if (( $(date +%s) - $(head -n 1 "$var_file") > MAX_MIN * 60 )); then
+            echo -e "${RED}Container Reached Maximum Time in \"$name\".${RESET}"
+            keep_running=false
+        fi
+
+        if [ "$keep_running" = false ]; then
+            ( destroy_container "$name" "${CONTAINERS[$name]}" $count)
+            ( create_container "$name" "${CONTAINERS[$name]}" $count) &
+            pids+=($!)
+        else
+            echo -e "${GREEN}Keeping Container \"$name\".${RESET}"
+        fi
     else
-        ( create_container "$container_name" "${CONTAINERS[$container_name]}" $count) &
+        ( create_container "$name" "${CONTAINERS[$name]}" $count) &
+        pids+=($!)
     fi
-    pids+=($!)
     ((count++))
 done 
 
