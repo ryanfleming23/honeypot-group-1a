@@ -61,9 +61,7 @@ create_container () {
 
     # TODO real log storage and data processing system (this is temporary)
     if [[ -f "$LOG_PATH""$name".log ]]; then
-        echo "Saving old log file to \""$name_"$(date +%Y-%m-%dT%H:%M:%S%z).log\"..."
-        mv "$LOG_PATH""$name".log "$LOG_PATH""$name"_"$(date +%Y-%m-%dT%H:%M:%S%z)".log
-        rm -f "$LOG_PATH""$name".log
+        /home/student/honeypot-group-1a/.venv/bin/python /home/student/honeypot-group-1a/src/logparse.py $name
     fi
 
     sudo forever --id "$name" -l "$LOG_PATH""$name".log start "$MITM_PATH" -n "$name" -i "$ip" -p "$port" --auto-access --auto-access-fixed 3 --debug
@@ -116,9 +114,7 @@ destroy_container () {
     sudo lxc-stop -n "$name"
     sudo lxc-destroy -n "$name"
 
-    echo "Saving old log file to \""$name_"$(date +%Y-%m-%dT%H:%M:%S%z).log\"..."
-    mv "$LOG_PATH""$name".log "$LOG_PATH""$name"_"$(date +%Y-%m-%dT%H:%M:%S%z)".log
-    rm -f "$LOG_PATH""$name".log
+    /home/student/honeypot-group-1a/.venv/bin/python /home/student/honeypot-group-1a/src/logparse.py $name
 
     echo -e "${RED}Removed Container \"$name\".${RESET}"
 }
