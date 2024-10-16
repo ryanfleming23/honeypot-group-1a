@@ -1,7 +1,7 @@
 #!/bin/bash
 
-if [ $# -ne 0 ]; then
-    echo "Usage: "$0" (no arguments required)";
+if [ $# -gt 1 ]; then
+    echo "Usage: "$0" (-d optional)";
     exit 1
 fi
 
@@ -36,8 +36,10 @@ create_container () {
     timeout=60
     while [[ -z "$ip" && $timeout -gt 0 ]]; do
         ip=$(sudo lxc-info -iH "$name")
-        sleep 0.25
-        ((timeout--))
+        if [[ -z "$ip" ]]; then
+            sleep 0.25
+            ((timeout--))
+        fi
     done
 
     if [[ -z "$ip" ]]; then
@@ -45,11 +47,9 @@ create_container () {
         exit 1
     fi
 
-    sudo ip addr add "$public_ip"/16 brd + dev eth0
+    sudo ip addr add "$public_ip"/24 brd + dev eth0
     sudo iptables --table nat --insert PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --jump DNAT --to-destination "$ip"
     sudo iptables --table nat --insert POSTROUTING --source "$ip" --destination 0.0.0.0/0 --jump SNAT --to-source "$public_ip"
-
-    sudo iptables --insert INPUT --protocol tcp --source 0.0.0.0/0 --destination "$public_ip" --dport 22 --match connlimit --connlimit-above 1 --jump REJECT
 
     sudo lxc-attach -n "$name" -e -- sudo apt-get --assume-yes install openssh-server
 
@@ -59,7 +59,6 @@ create_container () {
     fi
     sudo sysctl -w net.ipv4.conf.all.route_localnet=1
 
-    # TODO real log storage and data processing system (this is temporary)
     if [[ -f "$LOG_PATH""$name".log ]]; then
         /home/student/honeypot-group-1a/.venv/bin/python /home/student/honeypot-group-1a/src/logparse.py $name
     fi
@@ -75,10 +74,11 @@ create_container () {
     # sudo lxc-attach -n "$name" -- rm /home/ubuntu/honey.zip
 
     delay=$(printf "%s\n" "${DELAYS[@]}" | shuf -n 1)
-    if [ $delay -ne 0 ]; then
-        echo "trap 'sleep "$delay"' DEBUG" | sudo tee -a /var/lib/lxc/$name/rootfs/home/ubuntu/.bashrc
-        sudo lxc-attach -n "$name" -- source /home/ubuntu/.bashrc
-    fi
+    /home/student/honeypot-group-1a/src/on_connect.sh $delay $name $ip &
+    
+    # if [ $delay -ne 0 ]; then
+    #     echo "trap 'sleep "$delay"' DEBUG" | sudo tee -a /var/lib/lxc/$name/rootfs/etc/bash.bashrc
+    # fi
 
     echo $delay >> "$VAR_PATH""$name".txt
 
@@ -105,7 +105,7 @@ destroy_container () {
 
     sudo iptables --delete INPUT --protocol tcp --source 0.0.0.0/0 --destination "$public_ip" --dport 22 --match connlimit --connlimit-above 1 --jump REJECT
 
-    sudo ip addr delete "$public_ip"/16 brd + dev eth0 
+    sudo ip addr delete "$public_ip"/24 brd + dev eth0 
 
     sudo iptables -w --table nat --delete PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --protocol tcp --dport 22 --jump DNAT --to-destination "127.0.0.1:$port"
 
@@ -119,16 +119,30 @@ destroy_container () {
     echo -e "${RED}Removed Container \"$name\".${RESET}"
 }
 
+doCreate=true
+
+while getopts ":d" option; do
+    case $option in
+        d) # Delete
+            doCreate=false;;
+        \?) # Invalid
+            exit;;
+    esac
+done
+
 containers=$(sudo lxc-ls -f)
 
 pids=()
 count=0
 for name in "${!CONTAINERS[@]}"; do
-    if [[ "$containers" = *"$name"* ]]; then
-        keep_running=true
+    if [ "$doCreate" = false ]; then
+        ( destroy_container "$name" "${CONTAINERS[$name]}" $count)
+    else
+        if [[ "$containers" = *"$name"* ]]; then
+            keep_running=true
 
-        log_file="$LOG_PATH$name.log"
-        var_file="$VAR_PATH$name.txt"
+            log_file="$LOG_PATH$name.log"
+            var_file="$VAR_PATH$name.txt"
 
         if grep -q "Attacker authenticated and is inside container" "$log_file"; then
             if grep -q "Attacker closed connection" "$log_file"; then
@@ -143,7 +157,6 @@ for name in "${!CONTAINERS[@]}"; do
             echo -e "${RED}Container Reached Maximum Time in \"$name\".${RESET}"
             keep_running=false
         fi
-
         if [ "$keep_running" = false ]; then
             ( destroy_container "$name" "${CONTAINERS[$name]}" $count)
             ( create_container "$name" "${CONTAINERS[$name]}" $count) &
@@ -154,6 +167,7 @@ for name in "${!CONTAINERS[@]}"; do
     else
         ( create_container "$name" "${CONTAINERS[$name]}" $count) &
         pids+=($!)
+        fi
     fi
     ((count++))
 done 
