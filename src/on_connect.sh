@@ -30,6 +30,5 @@ if [[ $delay -ne 0 ]]; then
             fi
             echo "trap 'sleep "$adjustedDelay"' DEBUG" | sudo tee -a /var/lib/lxc/$containerName/rootfs/etc/bash.bashrc
         fi
-        exit 0
     done
 fi
