@@ -21,6 +21,11 @@ declare -A CONTAINERS;
 CONTAINERS["c1"]="172.30.250.112"; # Ryan Internal IP
 CONTAINERS["c2"]="172.30.250.144"; # Andrew Internal IP
 CONTAINERS["c3"]="172.30.250.108"; # Jacob Internal IP
+# CONTAINERS["c1"]="128.8.238.194";
+# CONTAINERS["c2"]="128.8.238.101";
+# CONTAINERS["c3"]="128.8.238.173";
+# CONTAINERS["c4"]="128.8.238.212";
+# CONTAINERS["c5"]="128.8.238.206";
 
 create_container () {
     name=$1
@@ -47,13 +52,13 @@ create_container () {
         exit 1
     fi
 
+    sudo ip link set dev eth0 up
     sudo ip addr add "$public_ip"/24 brd + dev eth0
-    sudo iptables --table nat --insert PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --jump DNAT --to-destination "$ip"
     sudo iptables --table nat --insert POSTROUTING --source "$ip" --destination 0.0.0.0/0 --jump SNAT --to-source "$public_ip"
 
     sudo lxc-attach -n "$name" -e -- sudo apt-get --assume-yes install openssh-server
 
-    # Has to work with three IPs
+    # Has to work with IPs
     if sudo forever list | grep -q "$name"; then
         sudo forever stop "$name"
     fi
@@ -62,6 +67,7 @@ create_container () {
     if [[ -f "$LOG_PATH""$name".log ]]; then
         /home/student/honeypot-group-1a/.venv/bin/python /home/student/honeypot-group-1a/src/logparse.py $name
     fi
+    sudo ip rule add from "$ip" table "$name"
 
     sudo forever --id "$name" -l "$LOG_PATH""$name".log start "$MITM_PATH" -n "$name" -i "$ip" -p "$port" --auto-access --auto-access-fixed 3 --debug
     sudo iptables --table nat --insert PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --protocol tcp --dport 22 --jump DNAT --to-destination "127.0.0.1:$port"
@@ -73,11 +79,11 @@ create_container () {
     /home/student/honeypot-group-1a/src/honey.sh $name
 
     delay=$(printf "%s\n" "${DELAYS[@]}" | shuf -n 1)
+
+    sudo lxc-attach -n "$name" -e -- sudo apt install -y iptables
+    sudo lxc-attach -n "$name" -e -- sudo iptables --insert INPUT --jump DROP
     
-    /home/student/honeypot-group-1a/src/on_connect.sh $delay $name $ip &
-    # if [ $delay -ne 0 ]; then
-    #     echo "trap 'sleep "$delay"' DEBUG" | sudo tee -a /var/lib/lxc/$name/rootfs/etc/bash.bashrc
-    # fi
+    /home/student/honeypot-group-1a/src/on_connect.sh $delay $name $ip $public_ip &
 
     echo $delay >> "$VAR_PATH""$name".txt
 
@@ -90,17 +96,9 @@ destroy_container () {
     count=$3
     port=$((count + 9804))
 
-    ip=$(sudo lxc-info -iH "$name")
-
-    if [[ "$ip" = "" ]]; then
-        echo "ERROR: Container Does Not Exist"
-        exit 1
-    fi
-
     echo -e "${RED}Removing Container \"$name\"...${RESET}"
 
-    sudo iptables -w --table nat --delete POSTROUTING --source "$ip" --destination 0.0.0.0/0 --jump SNAT --to-source "$public_ip"
-    sudo iptables -w --table nat --delete PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --jump DNAT --to-destination "$ip" 
+    sudo iptables --delete INPUT --source 0.0.0.0/0 --destination $public_ip --jump DROP
 
     sudo iptables --delete INPUT --protocol tcp --source 0.0.0.0/0 --destination "$public_ip" --dport 22 --match connlimit --connlimit-above 1 --jump REJECT
 
@@ -114,6 +112,16 @@ destroy_container () {
     sudo lxc-destroy -n "$name"
 
     /home/student/honeypot-group-1a/.venv/bin/python /home/student/honeypot-group-1a/src/logparse.py $name
+
+    ip=$(sudo lxc-info -iH "$name")
+
+    if [[ "$ip" = "" ]]; then
+        echo "ERROR: Container IP Not Found"
+        exit 1
+    fi
+    sudo ip rule del from "$ip" table "$name"
+    sudo iptables -w --table nat --delete POSTROUTING --source "$ip" --destination 0.0.0.0/0 --jump SNAT --to-source "$public_ip"
+    sudo iptables -w --table nat --delete PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --jump DNAT --to-destination "$ip" 
 
     echo -e "${RED}Removed Container \"$name\".${RESET}"
 }
