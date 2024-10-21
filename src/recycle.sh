@@ -70,12 +70,11 @@ create_container () {
 
     # Prelimary Honey Copying (Not the Focus)
     # sudo cp -r /home/student/honeypot-group-1a/honey.zip /var/lib/lxc/$name/rootfs/home/ubuntu/honey.zip
-    # sudo lxc-attach -n "$name" -- unzip /home/ubuntu/honey.zip
-    # sudo lxc-attach -n "$name" -- rm /home/ubuntu/honey.zip
+    /home/student/honeypot-group-1a/src/honey.sh $name
 
     delay=$(printf "%s\n" "${DELAYS[@]}" | shuf -n 1)
-    /home/student/honeypot-group-1a/src/on_connect.sh $delay $name $ip &
     
+    /home/student/honeypot-group-1a/src/on_connect.sh $delay $name $ip &
     # if [ $delay -ne 0 ]; then
     #     echo "trap 'sleep "$delay"' DEBUG" | sudo tee -a /var/lib/lxc/$name/rootfs/etc/bash.bashrc
     # fi
