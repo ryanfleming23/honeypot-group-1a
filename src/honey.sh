@@ -9,10 +9,9 @@ fi
 cont_name=$1
 zip_path=/home/student/honeypot-group-1a/honey/hbooth.zip
 
-sudo lxc file push "$zip_path" "$cont_name"/root/home
-sudo lxc-attach -n "$cont_name" -- sudo apt install unzip
-sudo lxc-attach -n "$cont_name" -- unzip /root/home/hbooth.zip -d /root/home
-sudo lxc_attach -n "$cont_name" -- rm /root/home/hbooth.zip
+sudo unzip "$zip_path" -d /var/lib/lxc/"$cont_name"/rootfs/home
+sudo lxc-attach -n "$cont_name" -- sudo useradd -d /home/hbooth hbooth
+sudo lxc-attach -n "$cont_name" -- sudo cp -r /home/ubuntu/* /home/hbooth
 
 exit 0
 
