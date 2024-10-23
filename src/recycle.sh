@@ -18,14 +18,12 @@ IDLE_MIN=4
 DELAYS=(0 1 2 5 10 30)
 
 declare -A CONTAINERS;
-CONTAINERS["c1"]="172.30.250.112"; # Ryan Internal IP
-CONTAINERS["c2"]="172.30.250.144"; # Andrew Internal IP
-CONTAINERS["c3"]="172.30.250.108"; # Jacob Internal IP
-# CONTAINERS["c1"]="128.8.238.194";
-# CONTAINERS["c2"]="128.8.238.101";
-# CONTAINERS["c3"]="128.8.238.173";
-# CONTAINERS["c4"]="128.8.238.212";
-# CONTAINERS["c5"]="128.8.238.206";
+CONTAINERS["DESKTOP-1AJRJA"]="128.8.238.194";
+CONTAINERS["DESKTOP-2AJRJA"]="128.8.238.101";
+CONTAINERS["DESKTOP-3AJRJA"]="128.8.238.173";
+CONTAINERS["DESKTOP-4AJRJA"]="128.8.238.212";
+CONTAINERS["DESKTOP-5AJRJA"]="128.8.238.206";
+CONTAINERS["DESKTOP-6AJRJA"]="128.8.238.209";
 
 create_container () {
     name=$1
@@ -52,11 +50,13 @@ create_container () {
         exit 1
     fi
 
-    sudo ip link set dev eth0 up
-    sudo ip addr add "$public_ip"/24 brd + dev eth0
-    sudo iptables --table nat --insert POSTROUTING --source "$ip" --destination 0.0.0.0/0 --jump SNAT --to-source "$public_ip"
+    sudo lxc-attach -n "$name" -- sudo apt-get install ssh -y
 
-    sudo lxc-attach -n "$name" -e -- sudo apt-get --assume-yes install openssh-server
+    sudo ip link set dev eth3 up
+    sudo ip addr add "$public_ip"/24 brd + dev eth3
+
+    sudo iptables --table nat --insert POSTROUTING --source "$ip" --destination 0.0.0.0/0 --jump SNAT --to-source "$public_ip"
+    sudo iptables --table nat --insert PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --jump DNAT --to-destination "$ip"
 
     # Has to work with IPs
     if sudo forever list | grep -q "$name"; then
@@ -67,7 +67,6 @@ create_container () {
     if [[ -f "$LOG_PATH""$name".log ]]; then
         /home/student/honeypot-group-1a/.venv/bin/python /home/student/honeypot-group-1a/src/logparse.py $name
     fi
-    sudo ip rule add from "$ip" table "$name"
 
     sudo forever --id "$name" -l "$LOG_PATH""$name".log start "$MITM_PATH" -n "$name" -i "$ip" -p "$port" --auto-access --auto-access-fixed 3 --debug
     sudo iptables --table nat --insert PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --protocol tcp --dport 22 --jump DNAT --to-destination "127.0.0.1:$port"
@@ -75,17 +74,13 @@ create_container () {
     date +%s > "$VAR_PATH""$name".txt
 
     # Prelimary Honey Copying (Not the Focus)
-    # sudo cp -r /home/student/honeypot-group-1a/honey.zip /var/lib/lxc/$name/rootfs/home/ubuntu/honey.zip
     /home/student/honeypot-group-1a/src/honey.sh $name
 
     delay=$(printf "%s\n" "${DELAYS[@]}" | shuf -n 1)
-
-    sudo lxc-attach -n "$name" -e -- sudo apt install -y iptables
-    sudo lxc-attach -n "$name" -e -- sudo iptables --insert INPUT --jump DROP
-    
-    /home/student/honeypot-group-1a/src/on_connect.sh $delay $name $ip $public_ip &
-
     echo $delay >> "$VAR_PATH""$name".txt
+    
+    /home/student/honeypot-group-1a/src/on_connect.sh $delay $name $ip $public_ip $port &
+    echo $! >> "$VAR_PATH""$name".txt
 
     echo -e "${GREEN}Created Container \"$name\".${RESET}"
 }
@@ -96,15 +91,32 @@ destroy_container () {
     count=$3
     port=$((count + 9804))
 
+    var_file="$VAR_PATH$name.txt"
+
+    if ! sudo lxc-ls | grep -q "$name"; then
+        echo "ERROR: Container Name Not Found"
+        exit 1
+    fi
+
+    sudo iptables -w --delete INPUT -d 127.0.0.1 -p tcp --dport "$port" --jump DROP
+    sudo iptables -w --delete INPUT -s $(sed -n '4p' "$var_file") -d 127.0.0.1 -p tcp --dport "$port" --jump ACCEPT
+
     echo -e "${RED}Removing Container \"$name\"...${RESET}"
 
-    sudo iptables --delete INPUT --source 0.0.0.0/0 --destination $public_ip --jump DROP
+    sudo iptables -w --delete INPUT --source 0.0.0.0/0 --destination 127.0.0.1 --jump DROP
 
-    sudo iptables --delete INPUT --protocol tcp --source 0.0.0.0/0 --destination "$public_ip" --dport 22 --match connlimit --connlimit-above 1 --jump REJECT
-
-    sudo ip addr delete "$public_ip"/24 brd + dev eth0 
+    sudo ip addr delete "$public_ip"/24 brd + dev eth3 
 
     sudo iptables -w --table nat --delete PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --protocol tcp --dport 22 --jump DNAT --to-destination "127.0.0.1:$port"
+
+    ip=$(sudo lxc-info -iH "$name")
+    if [[ "$ip" != "" ]]; then
+        sudo iptables -w --table nat --delete POSTROUTING --source "$ip" --destination 0.0.0.0/0 --jump SNAT --to-source "$public_ip"
+        sudo iptables -w --table nat --delete PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --jump DNAT --to-destination "$ip" 
+    fi
+
+    sudo pkill $(sed -n '3p' "$var_file")
+    sudo pkill -P $(sed -n '3p' "$var_file")
 
     sudo forever stop "$name"
 
@@ -112,17 +124,7 @@ destroy_container () {
     sudo lxc-destroy -n "$name"
 
     /home/student/honeypot-group-1a/.venv/bin/python /home/student/honeypot-group-1a/src/logparse.py $name
-
-    ip=$(sudo lxc-info -iH "$name")
-
-    if [[ "$ip" = "" ]]; then
-        echo "ERROR: Container IP Not Found"
-        exit 1
-    fi
-    sudo ip rule del from "$ip" table "$name"
-    sudo iptables -w --table nat --delete POSTROUTING --source "$ip" --destination 0.0.0.0/0 --jump SNAT --to-source "$public_ip"
-    sudo iptables -w --table nat --delete PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --jump DNAT --to-destination "$ip" 
-
+    
     echo -e "${RED}Removed Container \"$name\".${RESET}"
 }
 
@@ -137,43 +139,45 @@ while getopts ":d" option; do
     esac
 done
 
-containers=$(sudo lxc-ls -f)
-
 pids=()
 count=0
 for name in "${!CONTAINERS[@]}"; do
     if [ "$doCreate" = false ]; then
         ( destroy_container "$name" "${CONTAINERS[$name]}" $count)
     else
-        if [[ "$containers" = *"$name"* ]]; then
+        if sudo lxc-ls | grep -q "$name"; then
             keep_running=true
 
             log_file="$LOG_PATH$name.log"
             var_file="$VAR_PATH$name.txt"
 
-        if grep -q "Attacker authenticated and is inside container" "$log_file"; then
-            if grep -q "Attacker closed connection" "$log_file"; then
-                echo -e "${RED}Attacker Closed Connection in \"$name\".${RESET}"
-                keep_running=false
-            elif (( $(date +%s) - $(stat -c %Y "$log_file") > IDLE_MIN * 60 )); then
-                echo -e "${RED}Attacker Went Idle in \"$name\".${RESET}"
+            # if grep -q "{\"level\":\"error\",\"message\"" "$log_file"; then
+            #     echo -e "${RED}ERROR in creating container \"$name\".${RESET}"
+            #     keep_running=false
+            # fi
+            if grep -q "Attacker connected:" "$log_file"; then
+                if grep -q "Attacker ended the shell" "$log_file"; then
+                    echo -e "${RED}Attacker Closed Connection in \"$name\".${RESET}"
+                    keep_running=false
+                elif (( $(date +%s) - $(stat -c %Y "$log_file") > IDLE_MIN * 60 )); then
+                    echo -e "${RED}Attacker Went Idle in \"$name\".${RESET}"
+                    keep_running=false
+                fi
+            fi
+            if (( $(date +%s) - $(sed -n '1p' "$var_file") > MAX_MIN * 60 )); then
+                echo -e "${RED}Container Reached Maximum Time in \"$name\".${RESET}"
                 keep_running=false
             fi
-        fi
-        if (( $(date +%s) - $(head -n 1 "$var_file") > MAX_MIN * 60 )); then
-            echo -e "${RED}Container Reached Maximum Time in \"$name\".${RESET}"
-            keep_running=false
-        fi
-        if [ "$keep_running" = false ]; then
-            ( destroy_container "$name" "${CONTAINERS[$name]}" $count)
+            if [ "$keep_running" = false ]; then
+                destroy_container "$name" "${CONTAINERS[$name]}" $count 
+                ( create_container "$name" "${CONTAINERS[$name]}" $count) &
+                pids+=($!)
+            else
+                echo -e "${GREEN}Keeping Container \"$name\".${RESET}"
+            fi
+        else
             ( create_container "$name" "${CONTAINERS[$name]}" $count) &
             pids+=($!)
-        else
-            echo -e "${GREEN}Keeping Container \"$name\".${RESET}"
-        fi
-    else
-        ( create_container "$name" "${CONTAINERS[$name]}" $count) &
-        pids+=($!)
         fi
     fi
     ((count++))

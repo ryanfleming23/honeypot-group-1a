@@ -48,14 +48,17 @@ def main():
                 message = match.group(3)
                 if type == "LXC Streams":
                     if "New Stream" in message and start_time == "":
-                        start_time = time
+                        if start_time == "":
+                            start_time = time
                     elif "Removed Stream" in message and end_time == "":
-                        end_time = time
+                        if end_time == "":
+                            end_time = time
                 if type == "SHELL":
-                    if "Attacker Keystroke" in message:
-                        keystrokes += 1
-                    if "line from reader" in message:
-                        commands += 1
+                    if end_time == "":
+                        if "Attacker Keystroke" in message:
+                            keystrokes += 1
+                        if "line from reader" in message:
+                            commands += 1
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
     if start_time != "" and end_time != "":
         with open(f"/home/student/honeypot-group-1a/var/{sys.argv[1]}.txt") as varfile:
