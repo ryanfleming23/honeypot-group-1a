@@ -17,26 +17,27 @@ MAX_MIN=30
 IDLE_MIN=4
 DELAYS=(0 1 2 5 10 30)
 
+
 declare -A CONTAINERS;
-CONTAINERS["DESKTOP-1AJRJA"]="128.8.238.194";
-CONTAINERS["DESKTOP-2AJRJA"]="128.8.238.101";
-CONTAINERS["DESKTOP-3AJRJA"]="128.8.238.173";
+# CONTAINERS["DESKTOP-1AJRJA"]="128.8.238.194";
+# CONTAINERS["DESKTOP-2AJRJA"]="128.8.238.101";
+# CONTAINERS["DESKTOP-3AJRJA"]="128.8.238.173";
 CONTAINERS["DESKTOP-4AJRJA"]="128.8.238.212";
 CONTAINERS["DESKTOP-5AJRJA"]="128.8.238.206";
-CONTAINERS["DESKTOP-6AJRJA"]="128.8.238.209";
+# CONTAINERS["DESKTOP-6AJRJA"]="128.8.238.209";
 
 create_container () {
     name=$1
     public_ip=$2
-    count=$3
-    port=$((count + 9804))
+    count=$(echo "$name" | grep -o '[0-9]' | head -n 1 | xargs)
+    port=$((count + 9803))
 
     echo -e "${GREEN}Creating New Container \"$name\"...${RESET}"
     sudo lxc-create -n "$name" -t download -- -d ubuntu -r focal -a amd64
     sudo lxc-start -n "$name"
 
     ip=""
-    timeout=60
+    timeout=120
     while [[ -z "$ip" && $timeout -gt 0 ]]; do
         ip=$(sudo lxc-info -iH "$name")
         if [[ -z "$ip" ]]; then
@@ -68,7 +69,7 @@ create_container () {
         /home/student/honeypot-group-1a/.venv/bin/python /home/student/honeypot-group-1a/src/logparse.py $name
     fi
 
-    sudo forever --id "$name" -l "$LOG_PATH""$name".log start "$MITM_PATH" -n "$name" -i "$ip" -p "$port" --auto-access --auto-access-fixed 3 --debug
+    sudo forever --id "$name" -l "$LOG_PATH""$name".log start "$MITM_PATH" -n "$name" -i "$ip" -p "$port" --auto-access --auto-access-fixed 1 --debug
     sudo iptables --table nat --insert PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --protocol tcp --dport 22 --jump DNAT --to-destination "127.0.0.1:$port"
 
     date +%s > "$VAR_PATH""$name".txt
@@ -79,8 +80,7 @@ create_container () {
     delay=$(printf "%s\n" "${DELAYS[@]}" | shuf -n 1)
     echo $delay >> "$VAR_PATH""$name".txt
     
-    /home/student/honeypot-group-1a/src/on_connect.sh $delay $name $ip $public_ip $port &
-    echo $! >> "$VAR_PATH""$name".txt
+    /home/student/honeypot-group-1a/src/on_connect/on_connect_"$count".sh $delay $name $ip $public_ip $port &
 
     echo -e "${GREEN}Created Container \"$name\".${RESET}"
 }
@@ -88,8 +88,8 @@ create_container () {
 destroy_container () {
     name=$1
     public_ip=$2
-    count=$3
-    port=$((count + 9804))
+    count=$(echo "$name" | grep -o '[0-9]' | head -n 1 | xargs)
+    port=$((count + 9803))
 
     var_file="$VAR_PATH$name.txt"
 
@@ -99,7 +99,7 @@ destroy_container () {
     fi
 
     sudo iptables -w --delete INPUT -d 127.0.0.1 -p tcp --dport "$port" --jump DROP
-    sudo iptables -w --delete INPUT -s $(sed -n '4p' "$var_file") -d 127.0.0.1 -p tcp --dport "$port" --jump ACCEPT
+    sudo iptables -w --delete INPUT -s $(sed -n '3p' "$var_file") -d 127.0.0.1 -p tcp --dport "$port" --jump ACCEPT
 
     echo -e "${RED}Removing Container \"$name\"...${RESET}"
 
@@ -115,8 +115,7 @@ destroy_container () {
         sudo iptables -w --table nat --delete PREROUTING --source 0.0.0.0/0 --destination "$public_ip" --jump DNAT --to-destination "$ip" 
     fi
 
-    sudo pkill $(sed -n '3p' "$var_file")
-    sudo pkill -P $(sed -n '3p' "$var_file")
+    sudo pkill "on_connect_"$count".sh"
 
     sudo forever stop "$name"
 
@@ -140,10 +139,9 @@ while getopts ":d" option; do
 done
 
 pids=()
-count=0
 for name in "${!CONTAINERS[@]}"; do
     if [ "$doCreate" = false ]; then
-        ( destroy_container "$name" "${CONTAINERS[$name]}" $count)
+        ( destroy_container "$name" "${CONTAINERS[$name]}" )
     else
         if sudo lxc-ls | grep -q "$name"; then
             keep_running=true
@@ -151,17 +149,26 @@ for name in "${!CONTAINERS[@]}"; do
             log_file="$LOG_PATH$name.log"
             var_file="$VAR_PATH$name.txt"
 
-            # if grep -q "{\"level\":\"error\",\"message\"" "$log_file"; then
-            #     echo -e "${RED}ERROR in creating container \"$name\".${RESET}"
-            #     keep_running=false
-            # fi
+            if grep -q "{\"level\":\"error\",\"message\"" "$log_file"; then
+                echo -e "${RED}ERROR in creating container \"$name\".${RESET}"
+                keep_running=false
+            fi
             if grep -q "Attacker connected:" "$log_file"; then
+                last_line=$(grep "line from reader" "$log_file" | tail -n 1 | awk '{print $1, $2}')
                 if grep -q "Attacker ended the shell" "$log_file"; then
                     echo -e "${RED}Attacker Closed Connection in \"$name\".${RESET}"
                     keep_running=false
-                elif (( $(date +%s) - $(stat -c %Y "$log_file") > IDLE_MIN * 60 )); then
-                    echo -e "${RED}Attacker Went Idle in \"$name\".${RESET}"
-                    keep_running=false
+                elif [[ -n "$last_line" ]]; then
+                    if (( $(date +%s) - $(date -d "$last_line" +"%s") > IDLE_MIN * 60 )); then
+                        echo -e "${RED}Attacker Went Idle in \"$name\".${RESET}"
+                        keep_running=false
+                    fi
+                else
+                    connected=$(grep "Attacker connected:" "$log_file" | head -n 1 | awk '{print $1, $2}')
+                    if (( $(date +%s) - $(date -d "$connected" +"%s") > IDLE_MIN * 60 )); then
+                        echo -e "${RED}First Attacker Never Entered \"$name\".${RESET}"
+                        keep_running=false
+                    fi
                 fi
             fi
             if (( $(date +%s) - $(sed -n '1p' "$var_file") > MAX_MIN * 60 )); then
@@ -169,22 +176,21 @@ for name in "${!CONTAINERS[@]}"; do
                 keep_running=false
             fi
             if [ "$keep_running" = false ]; then
-                destroy_container "$name" "${CONTAINERS[$name]}" $count 
-                ( create_container "$name" "${CONTAINERS[$name]}" $count) &
+                destroy_container "$name" "${CONTAINERS[$name]}"
+                ( create_container "$name" "${CONTAINERS[$name]}" ) &
                 pids+=($!)
             else
                 echo -e "${GREEN}Keeping Container \"$name\".${RESET}"
             fi
         else
-            ( create_container "$name" "${CONTAINERS[$name]}" $count) &
+            ( create_container "$name" "${CONTAINERS[$name]}" ) &
             pids+=($!)
         fi
     fi
-    ((count++))
 done 
 
 for pid in "${pids[@]}"; do
-    wait $pid
+    wait "$pid"
     if [ $? -ne 0 ]; then
         echo "ERROR: A background process failed (PID $pid)"
     else

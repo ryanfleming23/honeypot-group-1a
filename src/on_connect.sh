@@ -6,7 +6,6 @@ if [[ $# -ne 5 ]]; then
 fi
 
 delay=$1
-adjustedDelay=$delay
 containerName=$2
 containerIP=$3
 publicIP=$4
@@ -35,14 +34,14 @@ done
 attackerIP=""
 timeout=60
 while [[ -z "$attackerIP" && $timeout -gt 0 ]]; do
-    attackerIP=$(sed -n '4p' "$varPath")
+    attackerIP=$(sed -n '3p' "$varPath")
     if [[ -z "$attackerIP" ]]; then
         sleep 0.25
         timeout=$((timeout - 1))
     fi
 done
 
-if [[ $time -eq 0 ]]; then
+if [[ $timeout -eq 0 ]]; then
     exit 1
 fi
 
@@ -61,8 +60,9 @@ if [[ $delay -ne 0 ]]; then
     else
         adjustedDelay=$delay
     fi
+    
     sudo touch /var/lib/lxc/$containerName/rootfs/etc/profile.d/$SCRIPT_NAME
-    echo "trap '(history 1 | grep -q "\$BASH_COMMAND" > /dev/null 2>&1) && sleep "$adjustedDelay"' DEBUG" | sudo tee -a /var/lib/lxc/$containerName/rootfs/etc/profile.d/$SCRIPT_NAME > /dev/null 2>&1
+    echo "trap '(history 1 | grep -q \"\$BASH_COMMAND\" > /dev/null 2>&1) && sleep "$adjustedDelay"' DEBUG" | sudo tee -a /var/lib/lxc/$containerName/rootfs/etc/profile.d/$SCRIPT_NAME > /dev/null 2>&1
     echo "shopt -u expand_aliases" | sudo tee -a /var/lib/lxc/$containerName/rootfs/etc/profile.d/$SCRIPT_NAME > /dev/null 2>&1
 fi
 sudo iptables --insert INPUT -s "$attackerIP" -d 127.0.0.1 -p tcp --dport "$mitmPort" --jump ACCEPT
