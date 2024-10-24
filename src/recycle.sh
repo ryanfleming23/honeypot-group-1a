@@ -15,8 +15,8 @@ RESET="\033[0m"
 
 MAX_MIN=30
 IDLE_MIN=4
+NON_INTERACTIVE=1
 DELAYS=(0 1 2 5 10 30)
-
 
 declare -A CONTAINERS;
 # CONTAINERS["DESKTOP-1AJRJA"]="128.8.238.194";
@@ -165,7 +165,7 @@ for name in "${!CONTAINERS[@]}"; do
                     fi
                 else
                     connected=$(grep "Attacker connected:" "$log_file" | head -n 1 | awk '{print $1, $2}')
-                    if (( $(date +%s) - $(date -d "$connected" +"%s") > IDLE_MIN * 60 )); then
+                    if (( $(date +%s) - $(date -d "$connected" +"%s") > NON_INTERACTIVE * 60 )); then
                         echo -e "${RED}First Attacker Never Entered \"$name\".${RESET}"
                         keep_running=false
                     fi

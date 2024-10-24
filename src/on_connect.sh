@@ -50,6 +50,7 @@ if [[ $delay -ne 0 ]]; then
     if [[ -n "$attackerIP" ]]; then
         pingtime="$(ping -c 1 $attackerIP | grep 'time=' | awk -F'time=' '{print $2}' | awk '{print $1}' | awk '{ if ($1 != "") printf "%.3f\n", $1/1000 }')"
     fi
+    echo "Pingtime: $pingtime" | sudo tee /home/student/honeypot-group-1a/log/on_connect.log
     adjustedDelay=""
     if [[ -n $pingtime ]]; then
         adjustedDelay=$(echo "scale=3; $delay - $pingtime" | bc)
@@ -60,6 +61,8 @@ if [[ $delay -ne 0 ]]; then
     else
         adjustedDelay=$delay
     fi
+
+    echo "Adjusted Delay: $adjustedDelay" | sudo tee /home/student/honeypot-group-1a/log/on_connect.log
     
     sudo touch /var/lib/lxc/$containerName/rootfs/etc/profile.d/$SCRIPT_NAME
     echo "trap '(history 1 | grep -q \"\$BASH_COMMAND\" > /dev/null 2>&1) && sleep "$adjustedDelay"' DEBUG" | sudo tee -a /var/lib/lxc/$containerName/rootfs/etc/profile.d/$SCRIPT_NAME > /dev/null 2>&1

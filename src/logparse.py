@@ -38,7 +38,7 @@ def main():
     keystrokes = 0
     commands = 0
     delay = None
-    interactive="no"
+    interactive=True
     with open(f"/home/student/honeypot-group-1a/log/{sys.argv[1]}.log") as logfile:
         pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}.\d{3}) - \[Debug\] \[(.*)\] (.*)"
         for line in logfile:
@@ -61,22 +61,22 @@ def main():
                         if "line from reader" in message:
                             commands += 1
                 if type == "EXEC":
-                    if start_time != "":
+                    if start_time == "":
                         if "Noninteractive" in message:
-                            interactive="yes"
+                            interactive=False
 
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
     with open(f"/home/student/honeypot-group-1a/var/{sys.argv[1]}.txt") as varfile:
         next(varfile)
         delay = int(varfile.readline())
         attacker_ip = varfile.readline().strip()
-    if interactive == "no":
+    if interactive:
         if start_time != "" and end_time != "":
-            row = [sys.argv[1], delay, time_difference(start_time, end_time), commands, keystrokes, attacker_ip, current_time]
+            row = [sys.argv[1], "interactive", delay, time_difference(start_time, end_time), commands, keystrokes, attacker_ip, current_time]
         else:
-            row = [sys.argv[1], delay, None, commands, keystrokes, attacker_ip, current_time]
+            row = [sys.argv[1], "interactive", delay, None, commands, keystrokes, attacker_ip, current_time]
     else:
-        row = [sys.argv[1], delay, None, commands, keystrokes, attacker_ip, current_time]
+        row = [sys.argv[1], "non-interactive", delay, None, commands, keystrokes, attacker_ip, current_time]
     if os.path.isfile(f"/home/student/honeypot-group-1a/dat/data.csv"):
         with open(f"/home/student/honeypot-group-1a/dat/data.csv", 'a', newline='') as data:
             writer = csv.writer(data)
@@ -84,7 +84,7 @@ def main():
     else:
         with open(f"/home/student/honeypot-group-1a/dat/data.csv", 'w', newline='') as data:
             writer = csv.writer(data)
-            fields = ["container", "delay", "duration", "num commands", "num keystrokes", "attacker_ip", "time of log"]
+            fields = ["container", "interactivity level", "delay", "duration", "num commands", "num keystrokes", "attacker_ip", "time of log"]
             writer.writerow(fields)
             writer.writerow(row)
     shutil.move(f"/home/student/honeypot-group-1a/log/{sys.argv[1]}.log", f"/home/student/honeypot-group-1a/dat/archive/{sys.argv[1]}-{current_time}.log")
