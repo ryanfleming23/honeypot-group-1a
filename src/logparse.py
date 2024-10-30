@@ -29,7 +29,7 @@ def get_time(archive_name):
     return match.group(1)
 
 def get_delay(archive_name):
-    df = pd.read_csv("/home/student/honeypot-group-1a/dat/data.csv")
+    df = pd.read_csv("/home/student/honeypot-group-1a/dat/full.csv")
 
     delay_value = df.loc[df['time of log'] == get_time(archive_name), 'delay']
 
@@ -73,15 +73,17 @@ def process_logfile(filename):
                         if end_time == "":
                             end_time = time
                 if type == "SHELL":
-                    if start_time != "":
+                    if start_time != "" and end_time == "":
                         if "Attacker Keystroke" in message:
                             keystrokes += 1
                         if "line from reader" in message:
                             interactive=True
                             commands += 1
+                            end_time = time
                 if type == "EXEC":
-                    if "Noninteractive" in message:
+                    if "Noninteractive" in message and end_time == "":
                         commands += 1
+                        end_time=time
                 if type == "Auto Access":
                     password_pattern = r"Adding the following credentials: \'(.*)\'"
                     password_match = re.search(password_pattern, message)
@@ -136,7 +138,7 @@ def process_all():
 
         row = [name, interactive, login_count, duration, attacker_ip, password, commands, keystrokes, delay, time]
 
-        write_row(row, "full")
+        write_row(row, "full2")
 
 
 if __name__ == "__main__":
