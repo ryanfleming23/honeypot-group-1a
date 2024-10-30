@@ -15,13 +15,14 @@ RESET="\033[0m"
 
 MAX_MIN=30
 IDLE_MIN=4
-NON_INTERACTIVE=1
+LOGIN_TIMEOUT_SEC=60
+NONINTERACTIVE_TIMEOUT_SEC=15
 DELAYS=(0 1 2 5 10 30)
 
 declare -A CONTAINERS;
-# CONTAINERS["DESKTOP-1AJRJA"]="128.8.238.194";
-# CONTAINERS["DESKTOP-2AJRJA"]="128.8.238.101";
-# CONTAINERS["DESKTOP-3AJRJA"]="128.8.238.173";
+# CONTAINERS["DESKTOP-1AJRJA"]="128.8.238.85";
+# CONTAINERS["DESKTOP-2AJRJA"]="128.8.238.88";
+CONTAINERS["DESKTOP-3AJRJA"]="128.8.238.173";
 CONTAINERS["DESKTOP-4AJRJA"]="128.8.238.212";
 CONTAINERS["DESKTOP-5AJRJA"]="128.8.238.206";
 # CONTAINERS["DESKTOP-6AJRJA"]="128.8.238.209";
@@ -148,7 +149,8 @@ for name in "${!CONTAINERS[@]}"; do
 
             log_file="$LOG_PATH$name.log"
             var_file="$VAR_PATH$name.txt"
-
+        
+            current_time=$(date +%s)
             if grep -q "{\"level\":\"error\",\"message\"" "$log_file"; then
                 echo -e "${RED}ERROR in creating container \"$name\".${RESET}"
                 keep_running=false
@@ -159,19 +161,23 @@ for name in "${!CONTAINERS[@]}"; do
                     echo -e "${RED}Attacker Closed Connection in \"$name\".${RESET}"
                     keep_running=false
                 elif [[ -n "$last_line" ]]; then
-                    if (( $(date +%s) - $(date -d "$last_line" +"%s") > IDLE_MIN * 60 )); then
+                    if (( $current_time - $(date -d "$last_line" +"%s") > IDLE_MIN * 60 )); then
                         echo -e "${RED}Attacker Went Idle in \"$name\".${RESET}"
                         keep_running=false
                     fi
                 else
                     connected=$(grep "Attacker connected:" "$log_file" | head -n 1 | awk '{print $1, $2}')
-                    if (( $(date +%s) - $(date -d "$connected" +"%s") > NON_INTERACTIVE * 60 )); then
+                    noninteractive=$(grep "Noninteractive mode attacker" "$log_file" | tail -n 1 | awk '{print $1, $2}')
+                    if (( $current_time - $(date -d "$connected" +"%s") > LOGIN_TIMEOUT_SEC )); then
                         echo -e "${RED}First Attacker Never Entered \"$name\".${RESET}"
+                        keep_running=false
+                    elif (( $current_time - $(date -d "$connected" +"%s") > NONINTERACTIVE_TIMEOUT_SEC )); then
+                        echo -e "${RED}Attacker using non-interactive mode \"$name\".${RESET}"
                         keep_running=false
                     fi
                 fi
             fi
-            if (( $(date +%s) - $(sed -n '1p' "$var_file") > MAX_MIN * 60 )); then
+            if (( $current_time - $(sed -n '1p' "$var_file") > MAX_MIN * 60 )); then
                 echo -e "${RED}Container Reached Maximum Time in \"$name\".${RESET}"
                 keep_running=false
             fi
