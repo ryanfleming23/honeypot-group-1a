@@ -25,7 +25,7 @@ CONTAINERS["DESKTOP-2AJRJA"]="128.8.238.88";
 CONTAINERS["DESKTOP-3AJRJA"]="128.8.238.173";
 CONTAINERS["DESKTOP-4AJRJA"]="128.8.238.212";
 CONTAINERS["DESKTOP-5AJRJA"]="128.8.238.206";
-# CONTAINERS["DESKTOP-6AJRJA"]="128.8.238.209";
+CONTAINERS["DESKTOP-6AJRJA"]="128.8.238.209";
 
 create_container () {
     name=$1
@@ -151,10 +151,10 @@ for name in "${!CONTAINERS[@]}"; do
             var_file="$VAR_PATH$name.txt"
         
             current_time=$(date +%s)
-            if grep -q "{\"level\":\"error\",\"message\"" "$log_file"; then
-                echo -e "${RED}ERROR in creating container \"$name\".${RESET}"
-                keep_running=false
-            fi
+            # if grep -q "{\"level\":\"error\",\"message\"" "$log_file"; then
+            #     echo -e "${RED}ERROR in creating container \"$name\".${RESET}"
+            #     keep_running=false
+            # fi
             if grep -q "Attacker connected:" "$log_file"; then
                 last_line=$(grep "line from reader" "$log_file" | tail -n 1 | awk '{print $1, $2}')
                 if grep -q "Attacker ended the shell" "$log_file"; then
